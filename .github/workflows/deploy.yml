@@ -1,7 +1,7 @@
-name: CI/CD: Build & Deploy to EC2
+name: Build & Deploy to EC2
 
 on:
-  workflow_dispatch:  # manual trigger only
+  workflow_dispatch:  # Manual trigger
 
 permissions:
   id-token: write
@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout the repository
+      # 1️⃣ Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -32,19 +32,20 @@ jobs:
         env:
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: latest   # or use $(date +%s) for unique timestamps
+          IMAGE_TAG: latest   # Or $(date +%s) for unique tags
         run: |
-          # Strip any whitespace/newlines from secrets
+          # Remove hidden whitespace/newlines from secrets
           ECR_REGISTRY=$(echo "$ECR_REGISTRY" | tr -d '[:space:]')
           ECR_REPOSITORY=$(echo "$ECR_REPOSITORY" | tr -d '[:space:]')
 
+          # Construct a safe Docker image reference
           IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           echo "Building Docker image: $IMAGE"
 
           docker build . --file Dockerfile --tag "$IMAGE"
           docker push "$IMAGE"
 
-      # 5️⃣ Deploy the image to EC2 via SSM
+      # 5️⃣ Deploy Docker image to EC2 via SSM
       - name: Deploy Docker image to EC2 via SSM
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
