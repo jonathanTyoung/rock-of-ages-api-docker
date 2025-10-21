@@ -1,7 +1,7 @@
 name: Deploy to EC2
 
 on:
-  workflow_dispatch:  # Manual only
+  workflow_dispatch:  # Manual trigger only
 
 permissions:
   id-token: write
@@ -12,27 +12,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # 1️⃣ Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: aws-actions/configure-aws-credentials@v3
+      # 2️⃣ Configure AWS credentials via OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: ${{ secrets.OIDC_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - uses: aws-actions/amazon-ecr-login@v2
+      # 3️⃣ Login to Amazon ECR
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Trigger remote deployment on EC2 via SSM
+      # 4️⃣ Trigger remote deployment on EC2 via SSM
+      - name: Deploy Docker image to EC2 via SSM
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
         run: |
+          # Construct a safe Docker image reference
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY:latest"
+
+          echo "Deploying Docker image: $IMAGE"
+
           aws ssm send-command \
-          --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
-          --document-name "AWS-RunShellScript" \
-          --comment "Manual deploy from GitHub Actions" \
-          --parameters commands='[
-              "IMAGE=\"${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:latest\"",
-              "aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}",
-              "docker pull \"$IMAGE\"",
-              "docker stop rock-of-ages-api || true",
-              "docker rm rock-of-ages-api || true",
-              "docker run --pull always -d --name rock-of-ages-api -p 80:8000 \"$IMAGE\""
-              ]' \    
-          --region ${{ secrets.AWS_REGION }}
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Manual deploy from GitHub Actions" \
+            --parameters commands="[
+              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+              \"docker pull $IMAGE\",
+              \"docker stop rock-of-ages-api || true\",
+              \"docker rm rock-of-ages-api || true\",
+              \"docker run --pull always -d --name rock-of-ages-api -p 80:8000 $IMAGE\"
+            ]" \
+            --region "$AWS_REGION"
